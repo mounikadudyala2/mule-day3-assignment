@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<file:config name="File_Config" doc:name="File Config" doc:id="f77d346a-231a-4512-b160-ebd9a32cb9df" >
+		<file:connection workingDir="/Users/mounikad/Desktop/mulesoft/day3_assignment/Input" />
+	</file:config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="24519318-2643-4a75-a353-240cffab3986" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Mounika@1303" database="mulesoft_DB" />
+	</db:config>
+	<db:config name="Database_Config1" doc:name="Database Config" doc:id="cc5f3ea5-aacf-4338-9aad-0da012b31faf" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Mounika@1303" database="mulesoft_DB" />
+	</db:config>
+	<flow name="day3_assignmentFlow" doc:id="5c4e75d5-2e60-452c-84fc-37d64eef9daa" >
+		<file:listener doc:name="Read data" doc:id="d9b456c9-51b4-43d5-8e0f-906b006fa155" config-ref="File_Config" moveToDirectory="/Users/mounikad/Desktop/mulesoft/day3_assignment/Archive" renameTo="#['SourceFile_' ++ (now() as String {format:'yyyy-MM-dd-hh-ss.SS'})]">
+			<scheduling-strategy >
+				<fixed-frequency frequency="5000" />
+			</scheduling-strategy>
+		</file:listener>
+		<ee:transform doc:name="Group By Country" doc:id="269b5777-d6ff-4814-a7e2-ac8e236e21bd" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload groupBy $.Country pluck$
+ 
+   
+   	
+   ]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="4900e441-13c0-49da-b0ae-868dce090d5c" message="#[payload]"/>
+		<batch:job jobName="batch_Of_4_Countries" doc:id="683400bb-0ec0-4349-ac52-98269ca84ddc" maxFailedRecords="1" blockSize="3">
+			<batch:process-records >
+				<batch:step name="Batch_Step_Of_1_Country" doc:id="237c54a3-3ed7-4672-8729-75005bd1a13a" >
+					<logger level="INFO" doc:name="Logger" doc:id="eaa80df2-edf9-4312-a951-e280a0fcf13f" message="Batch Started-#[payload]"/>
+					<ee:transform doc:name="Transform Message" doc:id="c12bd850-ad46-4a4c-bcb4-bb7e1c486aa9" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+var recordTypeData=payload groupBy $.RecordType pluck $
+---
+{
+	country:payload[0].Country as String,
+	profiles:recordTypeData map{
+	country:payload[0].Country as String,
+	recordType:	$.RecordType[0] as String,
+	count:sizeOf($) as Number
+	}
+}
+  	
+  
+  
+  
+  
+   	
+   
+]]></ee:set-payload>
+						</ee:message>
+						<ee:variables >
+						</ee:variables>
+					</ee:transform>
+					<logger level="INFO" doc:name="Logger" doc:id="c6a2bced-8aa5-4489-b3a0-2919f73d6953" message="Batch Ended-#[payload]"/>
+					<foreach doc:name="For Each" doc:id="6d38ffdb-d6d7-458b-8b6b-dc6c9b91b89b" collection="#[payload.profiles]">
+						<logger level="INFO" doc:name="Logger" doc:id="5b71f882-d5a5-479b-8b01-c9dfce495cb8" message="for each-#[payload]"/>
+						<db:insert doc:name="Insert" doc:id="3a1160fd-645a-4b8a-9990-97107e46acb9" config-ref="Database_Config">
+							<db:sql ><![CDATA[INSERT INTO mulesoft_DB.ProfileInfo
+   (`Country`,`RecordType`,`Count`)
+   VALUES(:country,:recordtype,:count)]]></db:sql>
+							<db:input-parameters ><![CDATA[#[{country : payload.country,recordtype : payload.recordType,count : payload.count}]]]></db:input-parameters>
+						</db:insert>
+					</foreach>
+				</batch:step>
+			</batch:process-records>
+			<batch:on-complete >
+				<logger level="INFO" doc:name="Logger" doc:id="1bdca405-65ed-4d3e-ab9c-d304ad9c6bb0" message="on complete-#[payload]"/>
+				<db:insert doc:name="Insert" doc:id="d853d327-b5aa-4551-bc79-1b807f62728d" config-ref="Database_Config1">
+					<db:sql ><![CDATA[INSERT INTO mulesoft_DB.BatchProcessingResult1
+          (`BatchId` ,`TotalRecords`,`FailedRecords`,`SuccesssfulRecords`)
+    VALUES
+          (:BatchId
+          ,:TotalRecords
+          ,:FailedRecords
+          ,:SuccesssfulRecords)]]></db:sql>
+					<db:input-parameters ><![CDATA[#[{BatchId : payload.batchJobInstanceId,
+TotalRecords :payload.totalRecords,  
+FailedRecords : payload.failedRecords,
+SuccesssfulRecords : payload.successfulRecords
+}]]]></db:input-parameters>
+				</db:insert>
+			</batch:on-complete>
+		</batch:job>
+	</flow>
+</mule>
